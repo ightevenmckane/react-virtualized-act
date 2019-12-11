@@ -27,6 +27,7 @@ import defaultOverscanIndicesGetter, {
 import updateScrollIndexHelper from "./utils/updateScrollIndexHelper";
 import defaultCellRangeRenderer from "./defaultCellRangeRenderer";
 import scrollbarSize from "dom-helpers/util/scrollbarSize";
+import throttle from "lodash.throttle";
 import {
   requestAnimationTimeout,
   cancelAnimationTimeout
@@ -444,6 +445,62 @@ export default class Grid extends React.PureComponent {
     });
   }
 
+  _onWheelHandler = throttle(({ deltaX, deltaY }) => {
+    // Prevent pointer events from interrupting a smooth scroll
+    this._debounceScrollEnded();
+
+    // When this component is shrunk drastically, React dispatches a series of back-to-back scroll events,
+    // Gradually converging on a scrollTop that is within the bounds of the new, smaller height.
+    // This causes a series of rapid renders that is slow for long lists.
+    // We can avoid that by doing some simple bounds checking to ensure that scrollTop never exceeds the total height.
+    const { height, width } = this.props;
+    const scrollbarSize = this._scrollbarSize;
+    const totalRowsHeight = this._rowSizeAndPositionManager.getTotalSize();
+    const totalColumnsWidth = this._columnSizeAndPositionManager.getTotalSize();
+    const scrollLeft = Math.min(
+      Math.max(0, totalColumnsWidth - width + scrollbarSize),
+      Math.max(0, this._scrollingContainer.scrollLeft + deltaX)
+    );
+    const scrollTop = Math.min(
+      Math.max(0, totalRowsHeight - height + scrollbarSize),
+      Math.max(0, this._scrollingContainer.scrollTop + deltaY)
+    );
+
+    // Certain devices (like Apple touchpad) rapid-fire duplicate events.
+    // Don't force a re-render if this is the case.
+    // The mouse may move faster then the animation frame does.
+    // Use requestAnimationFrame to avoid over-updating.
+    if (
+      this.state.scrollLeft !== scrollLeft ||
+      this.state.scrollTop !== scrollTop
+    ) {
+      const scrollDirectionHorizontal =
+        scrollLeft > this.state.scrollLeft
+          ? SCROLL_DIRECTION_FORWARD
+          : SCROLL_DIRECTION_BACKWARD;
+      const scrollDirectionVertical =
+        scrollTop > this.state.scrollTop
+          ? SCROLL_DIRECTION_FORWARD
+          : SCROLL_DIRECTION_BACKWARD;
+
+      const newState = {
+        isScrolling: true,
+        scrollDirectionHorizontal,
+        scrollDirectionVertical,
+        scrollPositionChangeReason: "requested"
+      };
+
+      this.setState(newState);
+    }
+
+    this._invokeOnScrollMemoizer({
+      scrollLeft,
+      scrollTop,
+      totalColumnsWidth,
+      totalRowsHeight
+    });
+  }, 1000 / 60);
+
   /**
    * Invalidate Grid size and recompute visible cells.
    * This is a deferred wrapper for recomputeGridSize().
@@ -731,6 +788,10 @@ export default class Grid extends React.PureComponent {
   }
 
   componentWillUnmount() {
+    if (this._scrollingContainer) {
+      this._scrollingContainer.removeEventListener("wheel", this._onWheel);
+    }
+
     if (this._disablePointerEventsTimeoutId) {
       cancelAnimationTimeout(this._disablePointerEventsTimeoutId);
     }
@@ -1201,7 +1262,18 @@ export default class Grid extends React.PureComponent {
     }
   }
 
+  _onWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    const { deltaX, deltaY } = event;
+    this._onWheelHandler({ deltaX, deltaY });
+  };
+
   _setScrollingContainerRef = (ref: Element) => {
+    if (ref) {
+      ref.removeEventListener("wheel", this._onWheel);
+      ref.addEventListener("wheel", this._onWheel, { passive: false });
+    }
+
     this._scrollingContainer = ref;
   };
 
