@@ -33,6 +33,8 @@ import {
   cancelAnimationTimeout
 } from "../utils/requestAnimationTimeout";
 
+const preventDefault: WheelEventListener = event => event.preventDefault();
+
 /**
  * Specifies the number of milliseconds during which to disable pointer events while a scroll is in progress.
  * This improves performance and makes scrolling smoother.
@@ -984,6 +986,7 @@ export default class Grid extends React.PureComponent {
         className={cn("ReactVirtualized__Grid", className)}
         id={id}
         onScroll={this._onScroll}
+        onWheel={this._onWheel}
         role={role}
         style={{
           ...gridStyle,
@@ -1270,8 +1273,8 @@ export default class Grid extends React.PureComponent {
 
   _setScrollingContainerRef = (ref: Element) => {
     if (ref) {
-      ref.removeEventListener("wheel", this._onWheel);
-      ref.addEventListener("wheel", this._onWheel, { passive: false });
+      ref.removeEventListener("wheel", preventDefault);
+      ref.addEventListener("wheel", preventDefault, { passive: false });
     }
 
     this._scrollingContainer = ref;
