@@ -1444,7 +1444,6 @@ class Grid extends React.PureComponent<Props, State> {
   }
 
   _onWheel = (event: WheelEvent) => {
-    event.preventDefault();
     const { deltaX, deltaY } = event;
     this._onWheelHandler({ deltaX, deltaY });
   };
