@@ -35,6 +35,7 @@ import {
   cancelAnimationTimeout,
 } from '../utils/requestAnimationTimeout';
 
+
 /**
  * Specifies the number of milliseconds during which to disable pointer events while a scroll is in progress.
  * This improves performance and makes scrolling smoother.
@@ -493,6 +494,81 @@ class Grid extends React.PureComponent<Props, State> {
     });
   }
 
+  preventDefault(event) {
+    event.preventDefault();
+  }
+
+  handleWheelEvent({ deltaX, deltaY }) {
+    // This code is basically handleScrollEvent function but scrollPositionChangeReason is REQUESTED
+    // Prevent pointer events from interrupting a smooth scroll
+    this._debounceScrollEnded();
+
+    // When this component is shrunk drastically, React dispatches a series of back-to-back scroll events,
+    // Gradually converging on a scrollTop that is within the bounds of the new, smaller height.
+    // This causes a series of rapid renders that is slow for long lists.
+    // We can avoid that by doing some simple bounds checking to ensure that scrollTop never exceeds the total height.
+    const {autoHeight, autoWidth, height, width} = this.props;
+    const scrollbarSize = this.state.instanceProps.scrollbarSize;
+    const totalRowsHeight = this.state.instanceProps.rowSizeAndPositionManager.getTotalSize();
+    const totalColumnsWidth = this.state.instanceProps.columnSizeAndPositionManager.getTotalSize();
+    const scrollLeft = Math.min(
+      Math.max(0, totalColumnsWidth - width + scrollbarSize),
+      Math.max(0, this._scrollingContainer.scrollLeft + deltaX)
+    );
+    const scrollTop = Math.min(
+      Math.max(0, totalRowsHeight - height + scrollbarSize),
+      Math.max(0, this._scrollingContainer.scrollTop + deltaY)
+    );
+
+    // Certain devices (like Apple touchpad) rapid-fire duplicate events.
+    // Don't force a re-render if this is the case.
+    // The mouse may move faster then the animation frame does.
+    // Use requestAnimationFrame to avoid over-updating.
+    if (
+      this.state.scrollLeft !== scrollLeft ||
+      this.state.scrollTop !== scrollTop
+    ) {
+      const scrollDirectionHorizontal =
+        scrollLeft !== this.state.scrollLeft
+          ? scrollLeft > this.state.scrollLeft
+            ? SCROLL_DIRECTION_FORWARD
+            : SCROLL_DIRECTION_BACKWARD
+          : this.state.scrollDirectionHorizontal;
+      const scrollDirectionVertical =
+        scrollTop !== this.state.scrollTop
+          ? scrollTop > this.state.scrollTop
+            ? SCROLL_DIRECTION_FORWARD
+            : SCROLL_DIRECTION_BACKWARD
+          : this.state.scrollDirectionVertical;
+
+
+      const newState: $Shape<State> = {
+        isScrolling: true,
+        scrollDirectionHorizontal,
+        scrollDirectionVertical,
+        scrollPositionChangeReason: SCROLL_POSITION_CHANGE_REASONS.REQUESTED,
+      };
+
+      if (!autoHeight) {
+        newState.scrollTop = scrollTop;
+      }
+
+      if (!autoWidth) {
+        newState.scrollLeft = scrollLeft;
+      }
+
+      newState.needToResetStyleCache = false;
+      this.setState(newState);
+    }
+
+    this._invokeOnScrollMemoizer({
+      scrollLeft,
+      scrollTop,
+      totalColumnsWidth,
+      totalRowsHeight
+    });
+  };
+
   /**
    * Invalidate Grid size and recompute visible cells.
    * This is a deferred wrapper for recomputeGridSize().
@@ -806,6 +882,10 @@ class Grid extends React.PureComponent<Props, State> {
   }
 
   componentWillUnmount() {
+    if (this._scrollingContainer) {
+      this._scrollingContainer.removeEventListener("wheel", this.preventDefault);
+    }
+
     if (this._disablePointerEventsTimeoutId) {
       cancelAnimationTimeout(this._disablePointerEventsTimeoutId);
     }
@@ -1048,6 +1128,7 @@ class Grid extends React.PureComponent<Props, State> {
         className={clsx('ReactVirtualized__Grid', className)}
         id={id}
         onScroll={this._onScroll}
+        onWheel={this._onWheel}
         role={role}
         style={{
           ...gridStyle,
@@ -1380,7 +1461,17 @@ class Grid extends React.PureComponent<Props, State> {
     }
   }
 
+  _onWheel = (event: WheelEvent) => {
+    const { deltaX, deltaY } = event;
+    this.handleWheelEvent({ deltaX, deltaY });
+  };
+
   _setScrollingContainerRef = (ref: Element) => {
+    if (ref) {
+      ref.removeEventListener("wheel", this.preventDefault);
+      ref.addEventListener("wheel", this.preventDefault, { passive: false });
+    }
+
     this._scrollingContainer = ref;
   };
 
