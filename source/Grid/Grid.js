@@ -35,7 +35,6 @@ import {
   cancelAnimationTimeout,
 } from '../utils/requestAnimationTimeout';
 
-
 /**
  * Specifies the number of milliseconds during which to disable pointer events while a scroll is in progress.
  * This improves performance and makes scrolling smoother.
@@ -151,6 +150,11 @@ type Props = {
    * This callback can be used to sync scrolling between lists, tables, or grids.
    */
   onScroll: (params: Scroll) => void,
+
+  /**
+   * Callback invoked whenever scrollToRow/Column/Cell triggers a state update.
+   */
+  onScrollToTargetCausedUpdate: (params: Scroll) => void,
 
   /**
    * Called whenever a horizontal or vertical scrollbar is added or removed.
@@ -498,7 +502,7 @@ class Grid extends React.PureComponent<Props, State> {
     event.preventDefault();
   }
 
-  handleWheelEvent({ deltaX, deltaY }) {
+  handleWheelEvent({deltaX, deltaY}) {
     // This code is basically handleScrollEvent function but scrollPositionChangeReason is REQUESTED
     // Prevent pointer events from interrupting a smooth scroll
     this._debounceScrollEnded();
@@ -513,11 +517,11 @@ class Grid extends React.PureComponent<Props, State> {
     const totalColumnsWidth = this.state.instanceProps.columnSizeAndPositionManager.getTotalSize();
     const scrollLeft = Math.min(
       Math.max(0, totalColumnsWidth - width + scrollbarSize),
-      Math.max(0, this._scrollingContainer.scrollLeft + deltaX)
+      Math.max(0, this._scrollingContainer.scrollLeft + deltaX),
     );
     const scrollTop = Math.min(
       Math.max(0, totalRowsHeight - height + scrollbarSize),
-      Math.max(0, this._scrollingContainer.scrollTop + deltaY)
+      Math.max(0, this._scrollingContainer.scrollTop + deltaY),
     );
 
     // Certain devices (like Apple touchpad) rapid-fire duplicate events.
@@ -540,7 +544,6 @@ class Grid extends React.PureComponent<Props, State> {
             ? SCROLL_DIRECTION_FORWARD
             : SCROLL_DIRECTION_BACKWARD
           : this.state.scrollDirectionVertical;
-
 
       const newState: $Shape<State> = {
         isScrolling: true,
@@ -565,9 +568,9 @@ class Grid extends React.PureComponent<Props, State> {
       scrollLeft,
       scrollTop,
       totalColumnsWidth,
-      totalRowsHeight
+      totalRowsHeight,
     });
-  };
+  }
 
   /**
    * Invalidate Grid size and recompute visible cells.
@@ -641,25 +644,72 @@ class Grid extends React.PureComponent<Props, State> {
    * Ensure column and row are visible.
    */
   scrollToCell({columnIndex, rowIndex}: CellPosition) {
-    const {columnCount} = this.props;
+    const {columnCount, onScrollToTargetCausedUpdate} = this.props;
+    const {scrollLeft: oldScrollLeft, scrollTop: oldScrollTop} = this.state;
 
     const props = this.props;
+
+    let newScrollLeft = undefined;
+    let newScrollTop = undefined;
 
     // Don't adjust scroll offset for single-column grids (eg List, Table).
     // This can cause a funky scroll offset because of the vertical scrollbar width.
     if (columnCount > 1 && columnIndex !== undefined) {
-      this._updateScrollLeftForScrollToColumn({
-        ...props,
-        scrollToColumn: columnIndex,
-      });
+      const stateUpdate = this._updateScrollLeftForScrollToColumn(
+        {
+          ...props,
+          scrollToColumn: columnIndex,
+        },
+        true,
+      );
+
+      if (
+        stateUpdate &&
+        typeof stateUpdate.scrollLeft === 'number' &&
+        stateUpdate.scrollLeft >= 0
+      ) {
+        newScrollLeft = stateUpdate.scrollLeft;
+      }
     }
 
     if (rowIndex !== undefined) {
-      this._updateScrollTopForScrollToRow({
-        ...props,
-        scrollToRow: rowIndex,
-      });
+      const stateUpdate = this._updateScrollTopForScrollToRow(
+        {
+          ...props,
+          scrollToRow: rowIndex,
+        },
+        true,
+      );
+
+      if (
+        stateUpdate &&
+        typeof stateUpdate.scrollTop === 'number' &&
+        stateUpdate.scrollTop >= 0
+      ) {
+        newScrollTop = stateUpdate.scrollTop;
+      }
     }
+
+    if (
+      !onScrollToTargetCausedUpdate ||
+      (typeof newScrollLeft !== 'number' && typeof newScrollTop !== 'number')
+    ) {
+      return;
+    }
+
+    const scrollLeft =
+      typeof newScrollLeft !== 'number' ? newScrollLeft : oldScrollLeft;
+    const scrollTop =
+      typeof newScrollTop !== 'number' ? newScrollTop : oldScrollTop;
+
+    onScrollToTargetCausedUpdate({
+      clientHeight: props.height,
+      clientWidth: props.width,
+      scrollHeight: this.getTotalRowsHeight(),
+      scrollLeft,
+      scrollTop,
+      scrollWidth: this.getTotalColumnsWidth(),
+    });
   }
 
   componentDidMount() {
@@ -883,7 +933,10 @@ class Grid extends React.PureComponent<Props, State> {
 
   componentWillUnmount() {
     if (this._scrollingContainer) {
-      this._scrollingContainer.removeEventListener("wheel", this.preventDefault);
+      this._scrollingContainer.removeEventListener(
+        'wheel',
+        this.preventDefault,
+      );
     }
 
     if (this._disablePointerEventsTimeoutId) {
@@ -1462,14 +1515,14 @@ class Grid extends React.PureComponent<Props, State> {
   }
 
   _onWheel = (event: WheelEvent) => {
-    const { deltaX, deltaY } = event;
-    this.handleWheelEvent({ deltaX, deltaY });
+    const {deltaX, deltaY} = event;
+    this.handleWheelEvent({deltaX, deltaY});
   };
 
   _setScrollingContainerRef = (ref: Element) => {
     if (ref) {
-      ref.removeEventListener("wheel", this.preventDefault);
-      ref.addEventListener("wheel", this.preventDefault, { passive: false });
+      ref.removeEventListener('wheel', this.preventDefault);
+      ref.addEventListener('wheel', this.preventDefault, {passive: false});
     }
 
     this._scrollingContainer = ref;
@@ -1610,6 +1663,7 @@ class Grid extends React.PureComponent<Props, State> {
   _updateScrollLeftForScrollToColumn(
     props: Props = this.props,
     state: State = this.state,
+    skipScrollToTargetCallback = false,
   ) {
     const stateUpdate = Grid._getScrollLeftForScrollToColumnStateUpdate(
       props,
@@ -1618,6 +1672,18 @@ class Grid extends React.PureComponent<Props, State> {
     if (stateUpdate) {
       stateUpdate.needToResetStyleCache = false;
       this.setState(stateUpdate);
+      if (props.onScrollToTargetCausedUpdate && !skipScrollToTargetCallback) {
+        props.onScrollToTargetCausedUpdate({
+          clientHeight: props.height,
+          clientWidth: props.width,
+          scrollHeight: this.getTotalRowsHeight(),
+          scrollLeft: stateUpdate.scrollLeft,
+          scrollTop: stateUpdate.scrollTop,
+          scrollWidth: this.getTotalColumnsWidth(),
+        });
+      }
+
+      return stateUpdate;
     }
   }
 
@@ -1714,6 +1780,7 @@ class Grid extends React.PureComponent<Props, State> {
   _updateScrollTopForScrollToRow(
     props: Props = this.props,
     state: State = this.state,
+    skipScrollToTargetCallback = false,
   ) {
     const stateUpdate = Grid._getScrollTopForScrollToRowStateUpdate(
       props,
@@ -1722,6 +1789,18 @@ class Grid extends React.PureComponent<Props, State> {
     if (stateUpdate) {
       stateUpdate.needToResetStyleCache = false;
       this.setState(stateUpdate);
+      if (props.onScrollToTargetCausedUpdate && !skipScrollToTargetCallback) {
+        props.onScrollToTargetCausedUpdate({
+          clientHeight: props.height,
+          clientWidth: props.width,
+          scrollHeight: this.getTotalRowsHeight(),
+          scrollLeft: stateUpdate.scrollLeft,
+          scrollTop: stateUpdate.scrollTop,
+          scrollWidth: this.getTotalColumnsWidth(),
+        });
+      }
+
+      return stateUpdate;
     }
   }
 
