@@ -59,6 +59,11 @@ type Props = {
    */
   onScroll: (params: Scroll) => void,
 
+  /**
+   * Callback invoked whenever the scrollToRow prop triggers a scrollTop change
+   */
+  onScrollToRowCausedUpdate: (params: Scroll) => void,
+
   /** See Grid#overscanIndicesGetter */
   overscanIndicesGetter: OverscanIndicesGetter,
 
@@ -101,6 +106,7 @@ export default class List extends React.PureComponent<Props> {
     autoHeight: false,
     estimatedRowSize: 30,
     onScroll: () => {},
+    onScrollToRowCausedUpdate: () => {},
     noRowsRenderer: () => null,
     onRowsRendered: () => {},
     overscanIndicesGetter: accessibilityOverscanIndicesGetter,
@@ -201,6 +207,7 @@ export default class List extends React.PureComponent<Props> {
         columnCount={1}
         noContentRenderer={noRowsRenderer}
         onScroll={this._onScroll}
+        onScrollToTargetCausedUpdate={this._onScrollToRowCausedUpdate}
         onSectionRendered={this._onSectionRendered}
         ref={this._setRef}
         scrollToRow={scrollToIndex}
@@ -248,6 +255,16 @@ export default class List extends React.PureComponent<Props> {
     const {onScroll} = this.props;
 
     onScroll({clientHeight, scrollHeight, scrollTop});
+  };
+
+  _onScrollToRowCausedUpdate = ({
+    clientHeight,
+    scrollHeight,
+    scrollTop,
+  }: GridScroll) => {
+    const {onScrollToRowCausedUpdate} = this.props;
+
+    onScrollToRowCausedUpdate({clientHeight, scrollHeight, scrollTop});
   };
 
   _onSectionRendered = ({
