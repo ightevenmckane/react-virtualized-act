@@ -154,7 +154,7 @@ type Props = {
   /**
    * Callback invoked whenever scrollToRow/Column/Cell triggers a state update.
    */
-  onScrollToTargetCausedUpdate: (params: Scroll) => void,
+  onScrollToTargetCausedUpdate?: (params: Scroll) => void,
 
   /**
    * Called whenever a horizontal or vertical scrollbar is added or removed.

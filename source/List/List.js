@@ -62,7 +62,7 @@ type Props = {
   /**
    * Callback invoked whenever the scrollToRow prop triggers a scrollTop change
    */
-  onScrollToRowCausedUpdate: (params: Scroll) => void,
+  onScrollToRowCausedUpdate?: (params: Scroll) => void,
 
   /** See Grid#overscanIndicesGetter */
   overscanIndicesGetter: OverscanIndicesGetter,
