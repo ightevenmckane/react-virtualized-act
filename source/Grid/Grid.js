@@ -154,7 +154,7 @@ type Props = {
   /**
    * Callback invoked whenever scrollToRow/Column/Cell triggers a state update.
    */
-  onScrollToTargetCausedUpdate: (params: Scroll) => void,
+  onScrollToTargetCausedUpdate?: (params: Scroll) => void,
 
   /**
    * Called whenever a horizontal or vertical scrollbar is added or removed.
@@ -648,6 +648,7 @@ class Grid extends React.PureComponent<Props, State> {
     const {scrollLeft: oldScrollLeft, scrollTop: oldScrollTop} = this.state;
 
     const props = this.props;
+    const state = this.state;
 
     let newScrollLeft = undefined;
     let newScrollTop = undefined;
@@ -660,6 +661,7 @@ class Grid extends React.PureComponent<Props, State> {
           ...props,
           scrollToColumn: columnIndex,
         },
+        state,
         true,
       );
 
@@ -678,6 +680,7 @@ class Grid extends React.PureComponent<Props, State> {
           ...props,
           scrollToRow: rowIndex,
         },
+        state,
         true,
       );
 
