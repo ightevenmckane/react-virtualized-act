@@ -166,9 +166,10 @@ export default class AutoSizer extends React.Component<Props, State> {
       // Guard against AutoSizer component being removed from the DOM immediately after being added.
       // This can result in invalid style values which can result in NaN values if we don't handle them.
       // See issue #150 for more context.
+      const boundingClientRect = this._parentNode.getBoundingClientRect();
 
-      const height = this._parentNode.offsetHeight || 0;
-      const width = this._parentNode.offsetWidth || 0;
+      const height = Math.trunc(boundingClientRect.height) || 0;
+      const width = Math.trunc(boundingClientRect.width) || 0;
 
       const win = this._window || window;
       const style = win.getComputedStyle(this._parentNode) || {};
